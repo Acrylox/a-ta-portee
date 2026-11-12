@@ -54,15 +54,18 @@ async function importFile(file) {
 
 /* ---------- Lecture de notes */
 
-/* Séance chronométrée : des séries de 8 notes jusqu'à la fin du temps (ou jusqu'à « Terminer »).
+/* Séance de lecture : des séries de 8 notes jusqu'à la fin du temps, ou sans limite jusqu'à « Terminer ».
    Appelle onEnd(stats) une seule fois ; renvoie { stop, end }.
-   cfg : { spec: () => palier à utiliser pour la prochaine série, dur (secondes), hints, noButton, onSeries(série, palier) } */
+   cfg : { spec: () => palier à utiliser pour la prochaine série, dur (secondes, 0 = infini), hints, noButton, onSeries(série, palier) } */
 function noteDrill(stage, cfg, onEnd) {
-  const S = { n: 0, clean: 0, ms: 0, errs: 0, miss: {}, t0: performance.now(), stopped: false, tr: null };
+  const inf = !cfg.dur && !cfg.noButton;   // sans bouton « Terminer », il faut une fin
+  const S = { n: 0, clean: 0, ms: 0, errs: 0, miss: {}, run: 0, best: 0, sec: 0, inf, t0: performance.now(), stopped: false, tr: null };
   const timer = h('div', { class: 'timer' }, h('i')), live = h('div', { class: 'plive' }), paper = h('div', { class: 'paper' }), sh = h('div');
   paper.append(sh);
   stage.innerHTML = '';
-  stage.append(h('div', { class: 'spread' }, live, !cfg.noButton && h('button', { class: 'btn sm', onclick: () => end() }, 'Terminer')), timer, paper);
+  stage.append(h('div', { class: 'spread' }, live, !cfg.noButton && h('button', { class: 'btn sm', onclick: () => end() }, 'Terminer')));
+  if (!inf) stage.append(timer);
+  stage.append(paper);
   const view = new ScoreView(sh, { zoom: 1.5, fit: true, osmd: { drawTimeSignatures: false, drawMeasureNumbers: false } });
   const key = pk => pk.clef + ':' + Notes.str(pk.item.p);
   /* Les notes souvent ratées, lentes ou encore peu vues reviennent plus souvent. */
@@ -72,7 +75,12 @@ function noteDrill(stage, cfg, onEnd) {
     const n = st.ok + st.ko, avg = st.ok ? st.ms / st.ok : 3000;
     return 1 + 4 * (st.ko / n) + clamp((avg - 1200) / 1500, 0, 2) + (n < 4 ? 1 : 0);
   };
-  const draw = () => { live.innerHTML = `<b>${S.n}</b> ${S.n > 1 ? 'notes lues' : 'note lue'} · ${S.n ? Math.round(S.clean / S.n * 100) : 100} % justes du premier coup` + (S.clean ? ` · ${(S.ms / S.clean / 1000).toFixed(1)} s par note` : ''); };
+  const draw = () => {
+    live.innerHTML = (inf ? `<b>${fmtDur((performance.now() - S.t0) / 1000)}</b> · ` : '')
+      + `<b>${S.n}</b> ${S.n > 1 ? 'notes lues' : 'note lue'} · ${S.n ? Math.round(S.clean / S.n * 100) : 100} % justes du premier coup`
+      + (S.clean ? ` · ${(S.ms / S.clean / 1000).toFixed(1)} s par note` : '')
+      + (inf && S.run >= 5 ? ` · série : <b>${S.run}</b>` : '');
+  };
   let model, k, ser, sp;
   async function round() {
     if (S.stopped) return;
@@ -86,7 +94,7 @@ function noteDrill(stage, cfg, onEnd) {
       onNote: r => {
         const pk = model.picks[k++];
         S.n++; ser.n++;
-        if (r.clean) { S.clean++; S.ms += r.ms; ser.clean++; ser.ms += r.ms; Store.addXp(1); }
+        if (r.clean) { S.clean++; S.ms += r.ms; ser.clean++; ser.ms += r.ms; Store.addXp(1); S.best = Math.max(S.best, ++S.run); } else S.run = 0;
         if (pk && pk.item) Store.noteStat(key(pk), r.clean, r.ms);
         draw();
       },
@@ -95,14 +103,17 @@ function noteDrill(stage, cfg, onEnd) {
     });
     S.tr.start();
   }
+  let shown = -1;
   const iv = setInterval(() => {
     const el = (performance.now() - S.t0) / 1000;
+    if (inf) { if (Math.floor(el) !== shown) { shown = Math.floor(el); draw(); } return; }   // chrono qui avance
     timer.firstChild.style.width = clamp(100 - el / cfg.dur * 100, 0, 100) + '%';
     if (el >= cfg.dur) end();
   }, 200);
   function stop() {
     if (S.stopped) return;
     S.stopped = true; clearInterval(iv);
+    S.sec = (performance.now() - S.t0) / 1000;
     if (S.tr) S.tr.stop();
     view.destroy();
   }
@@ -125,7 +136,8 @@ async function drawModel(host, model, zoom = 1.15) {
 }
 
 Views.notes = root => {
-  const cfg = Store.d.drill || (Store.d.drill = { clef: 'G', level: 0, fifths: 0, acc: false, names: false, hints: false, dur: 120 });
+  const cfg = Store.d.drill || (Store.d.drill = { clef: 'G', level: 0, fifths: 0, acc: false, names: false, hints: false });
+  if (!('limit' in cfg)) { cfg.limit = 0; delete cfg.dur; }   // durée en secondes, 0 = infini (remplace l'ancien réglage « dur »)
   const setup = h('div', { class: 'card' }), stage = h('div');
   let session = null;
   const save = () => Store.save();
@@ -135,11 +147,12 @@ Views.notes = root => {
 
   function drawSetup() {
     setup.hidden = false; setup.innerHTML = '';
-    const dur = field('Durée', seg([[60, '1 min'], [120, '2 min'], [300, '5 min']], cfg.dur, v => { cfg.dur = v; save(); }));
+    const dur = field('Durée', seg([[0, '∞ Infini'], [60, '1 min'], [120, '2 min'], [300, '5 min']], cfg.limit, v => { cfg.limit = v; save(); drawSetup(); }));
     const go = h('button', { class: 'btn primary', style: { marginLeft: 'auto' }, onclick: start }, '▶ Commencer');
+    const how = cfg.limit ? '' : ' Les notes défilent sans fin : arrête-toi quand tu veux avec « Terminer ».';
     if (bar.auto()) {
       setup.append(h('div', { class: 'row' }, dur, go),
-        h('p', { class: 'muted small', style: { margin: '12px 0 0' } }, 'La clé, l\'étendue et les altérations sont choisies selon ton niveau. Chaque série de 8 notes est évaluée : justesse du premier coup et temps par note.'));
+        h('p', { class: 'muted small', style: { margin: '12px 0 0' } }, 'La clé, l\'étendue et les altérations sont choisies selon ton niveau. Chaque série de 8 notes est évaluée : justesse du premier coup et temps par note.' + how));
       return;
     }
     setup.append(h('div', { class: 'row' },
@@ -152,7 +165,8 @@ Views.notes = root => {
       check('Dièses et bémols au hasard', cfg.acc, v => { cfg.acc = v; save(); }),
       check('Nom sous chaque note', cfg.names, v => { cfg.names = v; save(); }),
       check('Montrer la touche sur le clavier', cfg.hints, v => { cfg.hints = v; save(); }),
-      go));
+      go),
+    how && h('p', { class: 'muted small', style: { margin: '12px 0 0' } }, how.trim()));
   }
 
   function start() {
@@ -161,18 +175,23 @@ Views.notes = root => {
     const auto = bar.auto(), kind = cfg.kind || 'note';
     const manual = { clefs: cfg.clef === 'GF' ? ['G', 'F'] : [cfg.clef], range: kind === 'note' ? cfg.level : Math.max(1, cfg.level), keys: [cfg.fifths], acc: cfg.acc, names: cfg.names, kind, T: 2 };
     session = noteDrill(stage, {
-      spec: () => (auto ? NOTE_STAGES[Skill.level('notes')] : manual), dur: cfg.dur, hints: auto ? false : cfg.hints,
+      spec: () => (auto ? NOTE_STAGES[Skill.level('notes')] : manual), dur: cfg.limit, hints: auto ? false : cfg.hints,
       onSeries: (ser, sp) => { if (auto && ser.n >= 6) bar.report(Skill.record('notes', Skill.q.notes(sp, ser), 0.6)); },
     }, S => { session = null; summary(S, auto); });
   }
 
   function summary(S, auto) {
-    const acc = S.n ? S.clean / S.n : 0, bk = 'drill:' + (auto ? 'auto' : cfg.clef + cfg.level), prev = Store.d.best[bk] || 0;
-    if (S.clean > prev) { Store.d.best[bk] = S.clean; Store.save(); }
+    const acc = S.n ? S.clean / S.n : 0, who = auto ? 'auto' : cfg.clef + cfg.level;
+    /* En temps limité, le record est le nombre de notes justes ; en infini, la plus longue série de notes justes de suite. */
+    const bk = (S.inf ? 'run:' : 'drill:') + who, val = S.inf ? S.best : S.clean, prev = Store.d.best[bk] || 0;
+    if (val > prev) { Store.d.best[bk] = val; Store.save(); }
+    const rec = S.inf
+      ? tile(S.best, 'Notes justes de suite', val > prev && prev ? 'Nouveau record !' : `record : ${Math.max(prev, val)}`)
+      : tile(Math.max(prev, val), 'Record', val > prev && prev ? 'Nouveau record !' : 'notes justes en une séance');
     const worst = Object.entries(S.miss).sort((a, b) => b[1] - a[1]).slice(0, 4);
     stage.innerHTML = '';
-    stage.append(h('div', { class: 'card' }, h('h3', null, 'Séance terminée'),
-      h('div', { class: 'tiles' }, tile(S.n, 'Notes lues'), tile(Math.round(acc * 100) + ' %', 'Justes du premier coup'), tile(S.clean ? (S.ms / S.clean / 1000).toFixed(1) + ' s' : '—', 'Par note, en moyenne'), tile(Math.max(prev, S.clean), 'Record', S.clean > prev && prev ? 'Nouveau record !' : 'notes justes en une séance')),
+    stage.append(h('div', { class: 'card' }, h('h3', null, 'Séance terminée' + (S.inf ? ' · ' + fmtDur(S.sec) : '')),
+      h('div', { class: 'tiles' }, tile(S.n, 'Notes lues'), tile(Math.round(acc * 100) + ' %', 'Justes du premier coup'), tile(S.clean ? (S.ms / S.clean / 1000).toFixed(1) + ' s' : '—', 'Par note, en moyenne'), rec),
       worst.length ? h('p', null, 'À revoir en priorité : ', worst.map(([kk]) => [h('span', { class: 'tag' }, describe(kk)), ' '])) : S.n ? h('p', { class: 'muted' }, 'Aucune fausse note sur les notes isolées.') : null,
       h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: start }, 'Rejouer'), h('button', { class: 'btn', onclick: () => { stage.innerHTML = ''; drawSetup(); } }, 'Changer les réglages'))));
     bar.draw();
