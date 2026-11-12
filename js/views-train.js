@@ -618,8 +618,12 @@ Views.progres = root => {
 Views.reglages = root => {
   const s = Store.s;
   const row = (title, desc, ctl) => h('div', { class: 'set-row' }, h('div', { style: { flex: '1 1 300px' } }, h('strong', null, title), h('div', { class: 'd' }, desc)), ctl);
-  const reset = () => modal('Effacer ma progression ?', h('p', null, 'Leçons validées, points, statistiques et réglages seront remis à zéro. Tes partitions importées sont conservées.'),
-    [{ label: 'Annuler' }, { label: 'Tout effacer', cls: 'primary', fn: () => { Store.save = () => {}; try { localStorage.removeItem(Store.KEY); } catch (e) { /* rien */ } location.hash = '#/'; location.reload(); } }]);
+  const reset = () => modal('Effacer ma progression ?', h('p', null, 'Leçons validées, points, statistiques et réglages seront remis à zéro. Tes partitions importées sont conservées.'
+      + (Cloud.user ? ' Tu es connecté : la progression enregistrée dans ton compte sera effacée aussi.' : '')),
+    [{ label: 'Annuler' }, { label: 'Tout effacer', cls: 'primary', fn: () => {
+      if (Cloud.user) { location.hash = '#/'; Cloud.wipe(); return; }
+      Store.save = () => {}; try { localStorage.removeItem(Store.KEY); } catch (e) { /* rien */ } location.hash = '#/'; location.reload();
+    } }]);
   root.append(
     h('div', { class: 'card' }, h('h3', null, 'Piano MIDI'), midiPanel(),
       row('Faire entendre mes notes par le site', 'À activer si ton clavier ne produit aucun son tout seul. À désactiver si ton piano a ses propres haut-parleurs, pour ne pas entendre chaque note en double.',
@@ -630,6 +634,9 @@ Views.reglages = root => {
       row('Thème', 'Les partitions restent toujours sur fond clair.', seg([['auto', 'Automatique'], ['light', 'Clair'], ['dark', 'Sombre']], s.theme, v => { Store.set('theme', v); App.theme(); }))),
     h('div', { class: 'card' }, h('h3', null, 'Pratique'),
       row('Objectif quotidien', 'Mieux vaut dix minutes chaque jour qu\'une heure le dimanche.', seg([[5, '5 min'], [10, '10 min'], [20, '20 min'], [30, '30 min']], s.goalMin, v => Store.set('goalMin', v)))),
+    Cloud.enabled && h('div', { class: 'card' }, h('h3', null, 'Compte'), accountPanel()),
     h('div', { class: 'card' }, h('h3', null, 'Données'),
-      row('Tout reste sur cet ordinateur', 'Progression, réglages et partitions importées sont enregistrés dans ce navigateur, sans compte ni envoi en ligne.', h('button', { class: 'btn', onclick: reset }, 'Effacer ma progression'))));
+      row(Cloud.enabled ? 'Sans compte, tout reste sur cet ordinateur' : 'Tout reste sur cet ordinateur',
+        'Progression, réglages et partitions importées sont enregistrés dans ce navigateur.' + (Cloud.enabled ? ' Avec un compte, la progression est aussi sauvegardée en ligne ; les partitions importées restent ici.' : ' Rien n\'est envoyé en ligne.'),
+        h('button', { class: 'btn', onclick: reset }, 'Effacer ma progression'))));
 };

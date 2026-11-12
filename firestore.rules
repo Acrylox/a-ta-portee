@@ -1,0 +1,17 @@
+rules_version = '2';
+
+// Règles de la base Firestore (à publier dans la console Firebase : Firestore Database → Règles).
+// Chaque utilisateur connecté ne peut lire et écrire que sa propre fiche, users/{son identifiant}.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid} {
+      allow read, delete: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['data', 'rev', 'v', 'updated'])
+        && request.resource.data.data is string
+        && request.resource.data.data.size() < 900000
+        && request.resource.data.rev is string
+        && request.resource.data.updated == request.time;
+    }
+  }
+}

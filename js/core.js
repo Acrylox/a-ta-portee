@@ -48,20 +48,24 @@ const plural = (n, one, many) => n + ' ' + (n > 1 ? (many || one + 's') : one);
 const Store = {
   KEY: 'a-ta-portee.v1',
   d: null,
-  init() {
+  /* src : une progression à charger à la place de celle du navigateur (récupérée depuis le compte). */
+  init(src) {
     const settings = { naming: 'fr', theme: 'auto', echoMidi: true, volume: 0.8, keyLabels: 'do', dock: true, welcomed: false, goalMin: 10, hints: false, names: false };
-    let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(this.KEY) || '{}') || {}; } catch (e) { saved = {}; }
+    let saved = src || {};
+    if (!src) try { saved = JSON.parse(localStorage.getItem(this.KEY) || '{}') || {}; } catch (e) { saved = {}; }
     this.d = Object.assign({ xp: 0, days: {}, lessons: {}, notes: {}, best: {} }, saved);
     this.d.settings = Object.assign(settings, saved.settings || {});
   },
   _write: null,
-  save() {
+  /* Écriture immédiate (avant de quitter la page, ou après avoir remplacé la progression). */
+  flush() { try { localStorage.setItem(this.KEY, JSON.stringify(this.d)); } catch (e) { /* stockage indisponible */ } },
+  save(key) {
+    if (typeof Cloud !== 'undefined') Cloud.touch(key);
     if (!this._write) this._write = debounce(() => { try { localStorage.setItem(this.KEY, JSON.stringify(this.d)); } catch (e) { /* stockage indisponible */ } }, 250);
     this._write();
   },
   get s() { return this.d.settings; },
-  set(k, v) { this.d.settings[k] = v; this.save(); },
+  set(k, v) { this.d.settings[k] = v; this.save(k); },
   dayKey(date = new Date()) { return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0'); },
   day() { const k = this.dayKey(); return this.d.days[k] || (this.d.days[k] = { sec: 0, xp: 0 }); },
   addXp(n) { if (n <= 0) return; this.d.xp += n; this.day().xp += n; this.save(); if (typeof App !== 'undefined') App.drawFoot(); },

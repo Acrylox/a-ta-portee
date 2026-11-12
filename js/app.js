@@ -31,6 +31,8 @@ const App = {
       if (!document.hidden && Input.last && performance.now() - Input.last < 20000) { Store.addTime(5); this.drawFoot(); }
     }, 5000);
     this.route();
+    Cloud.on(() => this.drawTop());
+    Cloud.init();
     if (!Store.s.welcomed) this.welcome();
   },
 
@@ -77,6 +79,7 @@ const App = {
     t.innerHTML = '';
     const warn = Midi.status === 'denied' || Midi.status === 'unsupported';
     t.append(
+      accountChip(),
       h('button', { class: 'chip ' + (Midi.connected ? 'on' : warn ? 'warn' : ''), id: 'midi-chip', title: 'Piano MIDI', onclick: () => modal('Piano MIDI', midiPanel(), [{ label: 'Fermer' }]) },
         h('span', { class: 'dot' }), Midi.connected ? Midi.label() : Midi.status === 'idle' ? 'Connecter mon piano' : Midi.label()),
       h('label', { class: 'vol', title: 'Volume des sons du site' }, 'Volume',

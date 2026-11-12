@@ -67,7 +67,7 @@ const PcKeys = {
     addEventListener('keydown', e => {
       if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
       const t = e.target;
-      if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || (t.tagName === 'INPUT' && /^(text|number|search|email|url)$/.test(t.type)))) return;
+      if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || (t.tagName === 'INPUT' && /^(text|number|search|email|url|password)$/.test(t.type)))) return;
       if (e.code === 'KeyZ' || e.code === 'KeyX') { this.octave = clamp(this.octave + (e.code === 'KeyX' ? 1 : -1), -3, 3); if (typeof App !== 'undefined') App.drawDock(); return; }
       if (!(e.code in this.MAP) || this.down.has(e.code)) return;
       const m = 60 + 12 * this.octave + this.MAP[e.code];
